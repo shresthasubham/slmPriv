@@ -1,0 +1,21 @@
+# Smoke test: 2 scenarios × 3 agents. Used to validate the pipeline before longer runs.
+name: smoke
+scenario_type: core
+scenarios:
+  mode: list
+  ids: [T1548_001_suid_find, T1548_003_sudo_find]
+agents: [privescagent, wintermute, hacksynth]
+level: 0                  # original: zero-knowledge level 0
+max_steps: 20             # original MAX_STEPS
+step_timeout_s: 30        # original timeout = max_steps × 30 s
+repetitions: 1
+seed: 1234
+parallel: 2
+base_port: 6100
+proxy_port: 18080
+infra_retries: 2
+shuffle: true
+ssh_ready_timeout_s: 60
+# Added only when an agent sends no max_tokens (hackingBuddyGPT never does; HackSynth sends 1024).
+# Without it, a local server allows up to max_model_len - prompt output tokens (DEVIATIONS M-8).
+default_max_tokens: 4096

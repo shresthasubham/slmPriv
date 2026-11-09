@@ -1,0 +1,23 @@
+# Stratified pilot: up to 4 scenarios per category (all of them when a category has fewer),
+# 3 agents, 3 independent repetitions. Used to measure variance before the full run.
+name: pilot
+scenario_type: core
+scenarios:
+  mode: stratified
+  per_category: 4
+  sample_seed: 20261107
+agents: [privescagent, wintermute, hacksynth]
+level: 0
+max_steps: 20
+step_timeout_s: 30
+repetitions: 3
+seed: 1234                # repetition r uses seed + r
+parallel: 2
+base_port: 6200
+proxy_port: 18081
+infra_retries: 2
+shuffle: true
+ssh_ready_timeout_s: 60
+# Added only when an agent sends no max_tokens (hackingBuddyGPT never does; HackSynth sends 1024).
+# Without it, a local server allows up to max_model_len - prompt output tokens (DEVIATIONS M-8).
+default_max_tokens: 4096

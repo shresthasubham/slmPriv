@@ -1,0 +1,20 @@
+# Full original corpus: 531 core scenarios, 3 agents, 1 repetition (as in the original REPS = 1).
+name: full
+scenario_type: core
+scenarios:
+  mode: all
+agents: [privescagent, wintermute, hacksynth]
+level: 0
+max_steps: 20
+step_timeout_s: 30
+repetitions: 1
+seed: 1234
+parallel: 2
+base_port: 6300
+proxy_port: 18082
+infra_retries: 2
+shuffle: true
+ssh_ready_timeout_s: 60
+# Added only when an agent sends no max_tokens (hackingBuddyGPT never does; HackSynth sends 1024).
+# Without it, a local server allows up to max_model_len - prompt output tokens (DEVIATIONS M-8).
+default_max_tokens: 4096

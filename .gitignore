@@ -1,0 +1,14 @@
+# secrets
+secrets.env
+.env
+# environments, checkouts and weights (all re-creatable with scripts/)
+.venv/
+.venv-vllm/
+upstream/
+models/
+# outputs
+runs/
+reports/
+__pycache__/
+.pytest_cache/
+*.egg-info/

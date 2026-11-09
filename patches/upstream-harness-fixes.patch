@@ -1,0 +1,117 @@
+diff --git a/evaluation/adapters/privescagent_adapter.py b/evaluation/adapters/privescagent_adapter.py
+index 42bb56c..f63d409 100644
+--- a/evaluation/adapters/privescagent_adapter.py
++++ b/evaluation/adapters/privescagent_adapter.py
+@@ -23,6 +23,8 @@ from urllib.parse import urlparse
+ logger = logging.getLogger(__name__)
+ 
+ PROJECT_ROOT = Path(__file__).parent.parent.parent
++# [replication D-3] root detection on full output when PRIVESC_RESULT_TRUNCATE=0 (original: 500 chars)
++_RESULT_TRUNC = int(os.getenv("PRIVESC_RESULT_TRUNCATE", "500")) or None
+ 
+ # Pricing: USD per 1M tokens (input, output)
+ MODEL_PRICING = {
+@@ -113,7 +115,8 @@ class PrivEscAgentAdapter:
+         self.api_url = os.getenv("PRIVESC_API_URL", provider["api_url"])
+         self.api_key = os.getenv("PRIVESC_API_KEY", os.getenv(provider["api_key_env"], provider["api_key_default"]))
+         self.api_path = self._default_api_path(self.api_url)
+-        self.context_size = provider["context_size"]
++        # [replication D-2] real served context; the original uses the provider table (200000 for unknown models)
++        self.context_size = int(os.getenv("PRIVESC_CONTEXT_SIZE", provider["context_size"]))
+ 
+         # Ablation flags
+         self.disable_privenum = os.getenv("PRIVESCAGENT_DISABLE_PRIVENUM", "").lower() in ("1", "true")
+@@ -258,7 +261,8 @@ class PrivEscAgentAdapter:
+         password = agent_info.get("password", "password123")
+         hint = agent_info.get("hint", "")
+ 
+-        db_file = f"privescagent_{self.model_name.replace('/', '_')}.sqlite3"
++        # [replication D-1] PRIVESC_LOG_DB gives each run its own DB (fixes the shared-DB race).
++        db_file = os.getenv("PRIVESC_LOG_DB") or f"privescagent_{self.model_name.replace('/', '_')}.sqlite3"
+         self._db_file = db_file
+ 
+         cmd = [
+@@ -397,7 +401,7 @@ class PrivEscAgentAdapter:
+                 "turn": turn_num,
+                 "action": action,
+                 "command": cmd_text,
+-                "result": result_text[:500],
++                "result": result_text[:_RESULT_TRUNC],
+             })
+         return commands
+ 
+@@ -481,7 +485,7 @@ class PrivEscAgentAdapter:
+                     "turn": i + 1,
+                     "action": tr[1] or "unknown",
+                     "command": tr[2] or "",
+-                    "result": (tr[3] or "")[:500],
++                    "result": (tr[3] or "")[:_RESULT_TRUNC],
+                     "duration": round(tr[4], 2) if tr[4] else 0,
+                 })
+             conn.close()
+diff --git a/evaluation/adapters/wintermute.py b/evaluation/adapters/wintermute.py
+index e01374c..ef823e5 100644
+--- a/evaluation/adapters/wintermute.py
++++ b/evaluation/adapters/wintermute.py
+@@ -30,6 +30,8 @@ from typing import Optional
+ logger = logging.getLogger(__name__)
+ 
+ PROJECT_ROOT = Path(__file__).parent.parent.parent
++# [replication D-3] root detection on full output when PRIVESC_RESULT_TRUNCATE=0 (original: 500 chars)
++_RESULT_TRUNC = int(os.getenv("PRIVESC_RESULT_TRUNCATE", "500")) or None
+ # OUTPUT_DIR can be overridden via PRIVESC_OUTPUT_DIR env var
+ OUTPUT_DIR = Path(os.getenv("PRIVESC_OUTPUT_DIR", str(PROJECT_ROOT / "output")))
+ 
+@@ -252,7 +254,8 @@ class WintermuteAdapter:
+         hint = agent_info.get("hint", "")
+ 
+         # Use per-model SQLite file to avoid conflicts in parallel runs
+-        db_file = f"wintermute_{self.model_name.replace('/', '_')}.sqlite3"
++        # [replication D-1] PRIVESC_LOG_DB gives each run its own DB (fixes the shared-DB race).
++        db_file = os.getenv("PRIVESC_LOG_DB") or f"wintermute_{self.model_name.replace('/', '_')}.sqlite3"
+         self._db_file = db_file
+ 
+         cmd = [
+@@ -262,7 +265,8 @@ class WintermuteAdapter:
+             "--llm.model", self.model,
+             "--llm.api_url", self.api_url,
+             "--llm.api_path", self.api_path,
+-            "--llm.context_size", "200000",
++            # [replication D-2] real served context; the original default is 200000
++            "--llm.context_size", os.getenv("PRIVESC_CONTEXT_SIZE", "200000"),
+             "--conn=ssh",
+             "--conn.host", host,
+             "--conn.hostname", host,
+@@ -384,7 +388,7 @@ class WintermuteAdapter:
+                     "turn": i + 1,
+                     "action": tr[1] or "unknown",
+                     "command": tr[2] or "",
+-                    "result": (tr[3] or "")[:500],
++                    "result": (tr[3] or "")[:_RESULT_TRUNC],
+                     "duration": round(tr[4], 2) if tr[4] else 0,
+                 })
+ 
+@@ -458,7 +462,7 @@ class WintermuteAdapter:
+                     for line in raw.split("\n")
+                     if line.strip() and line.strip() != "│"
+                 ]
+-                result_text = "\n".join(lines)[:500]
++                result_text = "\n".join(lines)[:_RESULT_TRUNC]
+ 
+             commands.append({
+                 "turn": turn_num, "action": action,
+diff --git a/evaluation/runner.py b/evaluation/runner.py
+index bca8826..5a5c498 100644
+--- a/evaluation/runner.py
++++ b/evaluation/runner.py
+@@ -128,7 +128,9 @@ class ScenarioRunner:
+         """Build if needed and start the scenario container."""
+         scenario_id = self.metadata.get("scenario_id", self.scenario_dir.name)
+         image_tag = f"privesc-eval-{scenario_id}".lower()
+-        self.container_name = f"eval-{scenario_id}-{int(time.time())}".lower()
++        # [replication D-4] unique per-run container name (the original collides within one second)
++        self.container_name = (os.getenv("PRIVESC_CONTAINER_NAME")
++                               or f"eval-{scenario_id}-{int(time.time())}").lower()
+ 
+         # Reuse prebuilt scenario images when available. This keeps evaluation
+         # runs deterministic and avoids paying the Docker build cost repeatedly.
